@@ -2,13 +2,7 @@
 # -*- coding: UTF-8 -*-
 
 """
-Wrapper call demonstrated:       ai_device.a_in()
-
-Purpose:                         Reads the user-specified A/D input channels
-
-Demonstration:                   Displays the analog input data for each of
-                                 the user-specified channels using the first
-                                 supported range and input mode
+Read anolog encoder value and convert them to rad.
 
 Steps:
 1. Call get_daq_device_inventory() to get the list of available DAQ devices
@@ -26,6 +20,7 @@ from __future__ import print_function
 from time import sleep
 from os import system
 from sys import stdout
+import math
 
 from uldaq import (get_daq_device_inventory, DaqDevice, InterfaceType,
                    AiInputMode, AInFlag)
@@ -38,7 +33,7 @@ def main():
     range_index = 0
     interface_type = InterfaceType.ANY
     low_channel = 0
-    high_channel = 3
+    high_channel = 7
 
     try:
         # Get descriptors for all of the available DAQ devices.
@@ -106,22 +101,43 @@ def main():
         system('clear')
 
         try:
+            # input intitiallization
+            data_vol_pre = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            data_vol_incr = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            tolerance_ratio = 0.9
+            for channel in range(low_channel, high_channel + 1):
+                data_vol_pre[channel] = ai_device.a_in(channel, input_mode,
+                                                       ranges[range_index],
+                                                       AInFlag.DEFAULT)
+
             while True:
                 try:
                     reset_cursor()
                     print('Please enter CTRL + C to terminate the process\n')
                     print('Active DAQ device: ', descriptor.dev_string, ' (',
                           descriptor.unique_id, ')\n', sep='')
+                    data_vol_max = ai_device.a_in(0, input_mode,
+                                                  ranges[range_index],
+                                                  AInFlag.DEFAULT)
+                    tolerance = data_vol_max * tolerance_ratio
 
                     # Display data for the specified analog input channels.
-                    for channel in range(low_channel, high_channel + 1):
-                        data = ai_device.a_in(channel, input_mode,
-                                              ranges[range_index],
-                                              AInFlag.DEFAULT)
+                    for channel in range(low_channel + 1, high_channel + 1):
+                        data_vol = ai_device.a_in(channel, input_mode,
+                                                  ranges[range_index],
+                                                  AInFlag.DEFAULT)
+                        if data_vol - data_vol_pre[channel] > tolerance:
+                            data_vol_incr[channel] += data_vol - data_vol_pre[channel] - data_vol_max
+                        elif data_vol - data_vol_pre[channel] < -1.0 * tolerance:
+                            data_vol_incr[channel] += data_vol - data_vol_pre[channel] + data_vol_max
+                        else:
+                            data_vol_incr[channel] += data_vol - data_vol_pre[channel]
+                        data_rad = data_vol_incr[channel] / data_vol_max * 2 * math.pi
+                        data_vol_pre[channel] = data_vol
                         print('Channel(', channel, ') Data: ',
-                              '{:.6f}'.format(data), sep='')
+                              '{:.6f}'.format(data_rad), sep='')
 
-                    sleep(0.1)
+                    sleep(0.001)
                 except (ValueError, NameError, SyntaxError):
                     break
         except KeyboardInterrupt:
@@ -141,6 +157,8 @@ def reset_cursor():
     """Reset the cursor in the terminal window."""
     stdout.write('\033[1;1H')
 
+def absolute_relative_convertor():
+    print('\n')
 
 if __name__ == '__main__':
     main()
